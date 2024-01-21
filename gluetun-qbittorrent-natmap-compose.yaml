@@ -1,0 +1,86 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 8888:8888/tcp # HTTP proxy
+      - 8388:8388/tcp # Shadowsocks
+      - 8388:8388/udp # Shadowsocks
+      - 8090:8090 # port for qbittorrent
+    volumes:
+      - /opt/docker/gluetun:/gluetun
+    environment:
+      - PUID=1000 #CHANGE_TO_YOUR_UID
+      - PGID=1000 #CHANGE_TO_YOUR_GID
+      - TZ=Europe/Brussels #CHANGE_TO_YOUR_TZ
+      - VPN_SERVICE_PROVIDER=custom
+      - VPN_TYPE=wireguard
+      - VPN_ENDPOINT_IP=185.107.44.220
+      - VPN_ENDPOINT_PORT=51820
+      - WIREGUARD_PUBLIC_KEY=
+      - WIREGUARD_PRIVATE_KEY=
+      - WIREGUARD_ADDRESSES=10.2.0.2/32
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_PROVIDER=protonvpn
+      - HTTPPROXY=off #change to on if you wish to enable
+      - SHADOWSOCKS=off #change to on if you wish to enable
+      - FIREWALL_OUTBOUND_SUBNETS=172.17.0.0/16,192.168.3.0/24 #change this in line with your subnet see note on guide.
+#      - FIREWALL_VPN_INPUT_PORTS=12345 #uncomment this line and change the port as per the note on the guide
+    network_mode: bridge
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000 #CHANGE_TO_YOUR_UID
+      - PGID=1000 #CHANGE_TO_YOUR_GID
+      - TZ=Europe/Brussels #CHANGE_TO_YOUR_TZ
+      - WEBUI_PORT=8090
+      - UMASK=022
+    volumes:
+      - /opt/docker/qbittorrent:/config
+      - /media/Downloads:/downloads
+    network_mode: service:gluetun # run on the vpn network
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+  qbittorrent-natmap:
+    # https://github.com/soxfor/qbittorrent-natmap
+    image: ghcr.io/soxfor/qbittorrent-natmap:latest
+    container_name: qbittorrent-natmap
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=Europe/Brussels #CHANGE_TO_YOUR_TZ
+      - QBITTORRENT_SERVER=10.2.0.2
+      - VPN_GATEWAY=10.2.0.1
+      - QBITTORRENT_PORT=8090
+      - QBITTORRENT_USER=admin
+      - QBITTORRENT_PASS=adminadmin
+      # - VPN_GATEWAY=
+      # - VPN_CT_NAME=gluetun
+      # - VPN_IF_NAME=tun0
+      # - CHECK_INTERVAL=300
+      # - NAT_LEASE_LIFETIME=300
+    network_mode: service:gluetun
+    depends_on:
+      qbittorrent:
+        condition: service_started
+      gluetun:
+        condition: service_healthy
+    security_opt:
+    - no-new-privileges:true
